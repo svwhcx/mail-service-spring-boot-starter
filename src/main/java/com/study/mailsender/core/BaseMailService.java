@@ -25,8 +25,6 @@ public abstract class BaseMailService implements MailService{
 
 
     protected void doSendMail(Mail mail,MailSender mailSender) throws EmailException {
-        Logger.info("正在发送 。。。 {}",mail);
-        Logger.info("mail  sender 》》》 {}",mailSender);
         if (mail instanceof HtmlMail){
             sendHtmlMail(mailSender,mail);
         } else if (mail instanceof TextMail) {

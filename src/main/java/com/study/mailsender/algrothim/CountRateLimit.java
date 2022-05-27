@@ -1,6 +1,7 @@
 package com.study.mailsender.algrothim;
 
 
+import com.study.mailsender.mail.MailSender;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,20 +52,26 @@ public class CountRateLimit implements RateLimit{
     }
 
     /**
-     * 尝试访问，TODO 考虑并发情况下的修改冲突
-     * @return
+     * 尝试访问，并发情况下使用CAS + 自旋的方式尝试获取发送邮件条件
+     * @return 是否成功获得发送邮件的访问权
      */
     @Override
-    public boolean tryAccess(){
+    public boolean tryAccess(MailSender mailSender){
         long now = System.currentTimeMillis();
         // 判断是否在单位时间内
         if (now < accessTimeUnit.toMillis(timeLimit) + startTime.get()){
             if (accessCount.get() < accessCountLimit){
-                if (accessCount.compareAndSet(accessCount.get(),accessCount.get()+1)){
-                    return true;
-                }
-                LOGGER.error("===============当前邮箱发送频率超过了限制！===========");
-                return false;
+                int temp;
+                do {
+                    temp = accessCount.get();
+                    if (temp > accessCountLimit){
+                        LOGGER.error("===============当前邮箱发送频率超过了限制！===========");
+                        LOGGER.error("===============账号为：{}",mailSender.getFromSender());
+                        return false;
+                    }
+                }while (temp<accessCountLimit&&
+                        !accessCount.compareAndSet(accessCount.get(),accessCount.get()+1));
+                return true;
             }
             LOGGER.error("===============当前邮箱发送频率超过了限制！===========");
             return false;
