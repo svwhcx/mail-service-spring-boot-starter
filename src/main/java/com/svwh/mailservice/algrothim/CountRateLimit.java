@@ -1,7 +1,7 @@
-package com.study.mailsender.algrothim;
+package com.svwh.mailservice.algrothim;
 
 
-import com.study.mailsender.mail.MailSender;
+import com.svwh.mailservice.mail.MailSender;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,7 +12,6 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * @description 计数器限流算法进行限流。
  * @Author cxk
- * @Date 2022/5/26 10:55
  */
 public class CountRateLimit implements RateLimit{
 
@@ -52,7 +51,8 @@ public class CountRateLimit implements RateLimit{
     }
 
     /**
-     * 尝试访问，并发情况下使用CAS + 自旋的方式尝试获取发送邮件条件
+     * 尝试访问，并发情况下使用CAS + 自旋的方式尝试获取发送邮件所需的条件
+     * 直接使用自旋锁而不用互斥锁为了节约资源（获取锁的时间很短）
      * @return 是否成功获得发送邮件的访问权
      */
     @Override
@@ -61,22 +61,29 @@ public class CountRateLimit implements RateLimit{
         // 判断是否在单位时间内
         if (now < accessTimeUnit.toMillis(timeLimit) + startTime.get()){
             if (accessCount.get() < accessCountLimit){
-                int temp;
+                int aCount;
                 do {
-                    temp = accessCount.get();
-                    if (temp > accessCountLimit){
-                        LOGGER.error("===============当前邮箱发送频率超过了限制！===========");
-                        LOGGER.error("===============账号为：{}",mailSender.getFromSender());
+                    aCount = accessCount.get();
+                    if (aCount > accessCountLimit){
+                        rateLimitOccur(mailSender);
                         return false;
                     }
-                }while (temp<accessCountLimit&&
+                }while (aCount<accessCountLimit&&
                         !accessCount.compareAndSet(accessCount.get(),accessCount.get()+1));
                 return true;
             }
-            LOGGER.error("===============当前邮箱发送频率超过了限制！===========");
+            rateLimitOccur(mailSender);
             return false;
         }
-        // 重置时间窗口
+        // 尝试重置时间窗口
+        return resetTimeWindow(now);
+    }
+
+    /**
+     * 重置时间窗口
+     * @return 重置是否成功
+     */
+    private boolean resetTimeWindow(long now){
         if (startTime.compareAndSet(startTime.get(), now)){
             accessCount = ZERO;
             accessCount.incrementAndGet();
@@ -85,31 +92,11 @@ public class CountRateLimit implements RateLimit{
         return false;
     }
 
-
-
-    /**
-     * 限流模式，级别越高限流范围越广(6级可视为中档）
-     */
-    public enum CountRateLimitEnum{
-        one(TimeUnit.MINUTES,10L,20),
-        two(TimeUnit.MINUTES,3L,10),
-        three(TimeUnit.SECONDS,30L,10),
-        four(TimeUnit.MINUTES,5L,40),
-        five(TimeUnit.MINUTES,1L,10),
-        six(TimeUnit.MINUTES,1L,20),
-        seven(TimeUnit.MINUTES,1L,30),
-        eight(TimeUnit.MINUTES,1L,50),
-        nine(TimeUnit.MINUTES,1L,60),
-        ten(TimeUnit.MINUTES,1L,70),
-        eleven(TimeUnit.MINUTES,1L,100);
-        private final CountRateLimit countRateLimit;
-
-        CountRateLimitEnum(TimeUnit timeUnit,Long time,int account){
-            this.countRateLimit = new CountRateLimit(timeUnit,time,account);
-        }
-
-        public CountRateLimit getRateLimit(){
-            return this.countRateLimit;
-        }
+    private void rateLimitOccur(MailSender mailSender){
+        LOGGER.error("===============当前邮箱{}发送频率超过了限制！===========",mailSender.getFromSender());
     }
+
+
+
+
 }

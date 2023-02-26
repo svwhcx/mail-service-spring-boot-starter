@@ -1,7 +1,7 @@
-package com.study.mailsender.conf;
+package com.svwh.mailservice.conf;
 
 
-import com.study.mailsender.mail.MailSender;
+import com.svwh.mailservice.mail.MailSender;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.List;
@@ -9,9 +9,8 @@ import java.util.List;
 /**
  * @description
  * @Author cxk
- * @Date 2022/5/11 22:00
  */
-@ConfigurationProperties(prefix = "mail")
+@ConfigurationProperties(prefix = "mail-service")
 public class MailProperties {
 
     /**

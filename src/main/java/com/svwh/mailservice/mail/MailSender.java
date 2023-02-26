@@ -1,10 +1,9 @@
-package com.study.mailsender.mail;
+package com.svwh.mailservice.mail;
 
 
 /**
  * @description
  * @Author cxk
- * @Date 2022/5/22 23:04
  */
 public class MailSender {
 
@@ -54,9 +53,9 @@ public class MailSender {
     private Integer timeout = 3000;
 
     /**
-     * 邮箱号可发送等级（1 - 11）默认中级
+     * 邮箱号可发送等级（1 - 14）默认低级
      */
-    private Integer senderRank = 6;
+    private Integer senderRank = 9;
 
     /**
      * 对该账号进行发送限制（不必配置此选项）,(调整可见性）
@@ -163,114 +162,6 @@ public class MailSender {
     public void setSenderRank(Integer senderRank) {
         this.senderRank = senderRank;
     }
-
-    /*
-    private Boolean sslEnable = true;
-
-    private Boolean starttlsEnable = true;
-
-    private String defaultEncoding = "UTF-8";
-
-    private String fromSender;
-
-    private String hostName;
-
-    private String username;
-
-    private String password;
-
-    private int port = 465;
-
-    private Integer timeout = 3000;
-
-
-    public Boolean getSslEnable() {
-        return sslEnable;
-    }
-
-    public void setSslEnable(Boolean sslEnable) {
-        this.sslEnable = sslEnable;
-    }
-
-    public Boolean getStarttlsEnable() {
-        return starttlsEnable;
-    }
-
-    public void setStarttlsEnable(Boolean starttlsEnable) {
-        this.starttlsEnable = starttlsEnable;
-    }
-
-    public String getDefaultEncoding() {
-        return defaultEncoding;
-    }
-
-    public void setDefaultEncoding(String defaultEncoding) {
-        this.defaultEncoding = defaultEncoding;
-    }
-
-    public String getFromSender() {
-        return fromSender;
-    }
-
-    public void setFromSender(String fromSender) {
-        this.fromSender = fromSender;
-    }
-
-    public String getHostName() {
-        return hostName;
-    }
-
-    public void setHostName(String hostName) {
-        this.hostName = hostName;
-    }
-
-    public String getUsername() {
-        return username;
-    }
-
-    public void setUsername(String username) {
-        this.username = username;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
-    }
-
-    public int getPort() {
-        return port;
-    }
-
-    public void setPort(int port) {
-        this.port = port;
-    }
-
-    public Integer getTimeout() {
-        return timeout;
-    }
-
-    public void setTimeout(Integer timeout) {
-
-        this.timeout = timeout;
-    }
-
-    @Override
-    public String toString() {
-        return "MailSender{" +
-                "sslEnable=" + sslEnable +
-                ", starttlsEnable=" + starttlsEnable +
-                ", defaultEncoding='" + defaultEncoding + '\'' +
-                ", fromSender='" + fromSender + '\'' +
-                ", hostName='" + hostName + '\'' +
-                ", username='" + username + '\'' +
-                ", password='" + password + '\'' +
-                ", port=" + port +
-                ", timeout=" + timeout +
-                '}';
-    }*/
 
     @Override
     public String toString() {

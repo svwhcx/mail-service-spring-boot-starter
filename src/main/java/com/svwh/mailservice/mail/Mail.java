@@ -1,11 +1,10 @@
-package com.study.mailsender.mail;
+package com.svwh.mailservice.mail;
 
 import java.util.List;
 
 /**
  * @description
  * @Author cxk
- * @Date 2022/5/22 22:50
  */
 public class Mail {
 
@@ -43,35 +42,6 @@ public class Mail {
     public void setContent(String content) {
         this.content = content;
     }
-
-    /*public static class Builder{
-
-        private List<String> toMail;
-
-        private String content;
-
-        private String subject;
-
-        public Builder toMail(List<String> toMail){
-            this.toMail = toMail;
-            return this;
-        }
-
-        public Builder content(String content){
-            this.content = content;
-            return this;
-        }
-
-        public Builder subject(String subject){
-            this.subject = subject;
-            return this;
-        }
-
-        public Mail build(){
-            return null;
-        }
-
-    }*/
 
 
     public Boolean getStrictArrive() {

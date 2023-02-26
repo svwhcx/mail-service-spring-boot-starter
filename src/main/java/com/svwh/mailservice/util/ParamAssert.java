@@ -1,10 +1,9 @@
-package com.study.mailsender.util;
+package com.svwh.mailservice.util;
 
 
 /**
  * @description
  * @Author cxk
- * @Date 2022/5/26 13:19
  */
 public class ParamAssert {
 

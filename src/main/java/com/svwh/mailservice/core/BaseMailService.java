@@ -1,9 +1,10 @@
-package com.study.mailsender.core;
+package com.svwh.mailservice.core;
 
-import com.study.mailsender.mail.HtmlMail;
-import com.study.mailsender.mail.Mail;
-import com.study.mailsender.mail.MailSender;
-import com.study.mailsender.mail.TextMail;
+import com.svwh.mailservice.listener.MailServiceListener;
+import com.svwh.mailservice.mail.HtmlMail;
+import com.svwh.mailservice.mail.Mail;
+import com.svwh.mailservice.mail.MailSender;
+import com.svwh.mailservice.mail.TextMail;
 import org.apache.commons.mail.DefaultAuthenticator;
 import org.apache.commons.mail.EmailException;
 import org.apache.commons.mail.HtmlEmail;
@@ -11,20 +12,35 @@ import org.apache.commons.mail.SimpleEmail;
 
 import org.slf4j.LoggerFactory;
 
+import javax.mail.internet.AddressException;
+import java.util.concurrent.locks.ReentrantLock;
+
+
 /**
  * @description
  * @Author cxk
- * @Date 2022/5/22 23:02
  */
 public abstract class BaseMailService implements MailService{
 
     private final org.slf4j.Logger Logger = LoggerFactory.getLogger(BaseMailService.class);
 
+    /**
+     * 发出错误预警的时间戳，防止多线程情况下短时间内频繁报警
+     */
+    private long errorTriggerSleepTime = System.currentTimeMillis();
+
+    private final ReentrantLock lock = new ReentrantLock();
+
+    /**
+     * 邮件服务监听器
+     */
+    private MailServiceListener mailServiceListener;
+
     @Override
-    public abstract boolean sendMail(Mail mail);
+    public abstract boolean send(Mail mail);
 
 
-    protected void doSendMail(Mail mail,MailSender mailSender) throws EmailException {
+    protected void doSendMail(Mail mail,MailSender mailSender) throws AddressException,EmailException {
         if (mail instanceof HtmlMail){
             sendHtmlMail(mailSender,mail);
         } else if (mail instanceof TextMail) {
@@ -61,4 +77,30 @@ public abstract class BaseMailService implements MailService{
             email.send();
     }
 
+    @Override
+    public void setErrorListener(MailServiceListener mailServiceListener) {
+        this.mailServiceListener = mailServiceListener;
+    }
+
+    /**
+     * 邮箱服务预警，当服务不可用时所触发的动作（包括所有邮箱账号不可用）
+     */
+    protected void errorTrigger(){
+        long currentTime = System.currentTimeMillis();
+         // 在判断当前时间是否满足的时候加锁防止多线程情况下
+         // 导致同时进行判断从而短时间内发出多次预警
+        lock.lock();
+        try {
+            if (currentTime - errorTriggerSleepTime > 30000){
+                errorTriggerSleepTime = currentTime;
+                Logger.warn("邮箱服务资源即将耗尽!");
+                if (mailServiceListener != null){
+                    mailServiceListener.errorListener();
+                }
+            }
+        }finally {
+            lock.unlock();
+        }
+
+    }
 }
