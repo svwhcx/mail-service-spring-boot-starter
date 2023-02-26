@@ -20,13 +20,22 @@
 
 ### 1. 导入依赖
 
-当前框架已做成springboot-starter因此直接导入对应的pom依赖即可
+当前框架已做成springboot-starter因此直接导入对应的pom依赖即可，由于没有发布到maven中央仓库因此直接使用了jitpack的地址
 
 ```xml
+<!-- 设置仓库地址 -->
+<repositories>
+  <repository>
+    <id>jitpack.io</id>
+    <url>https://jitpack.io</url>
+  </repository>
+</repositories>
+
+<!-- 导入依赖 -->
 <dependency>
-  <groupId>com.svwh</groupId>
-  <artifactId>mail-service</artifactId>
-  <version>0.0.3-SNAPSHOT</version>
+<groupId>com.github.cx2002</groupId>
+<artifactId>mail-service-spring-boot-starter</artifactId>
+<version>v1.0.0</version>
 </dependency>
 ```
 
