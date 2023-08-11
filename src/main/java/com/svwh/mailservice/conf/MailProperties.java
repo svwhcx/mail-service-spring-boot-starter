@@ -3,6 +3,7 @@ package com.svwh.mailservice.conf;
 
 import com.svwh.mailservice.mail.MailSender;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 
 import java.util.List;
 
@@ -10,7 +11,8 @@ import java.util.List;
  * @description
  * @Author cxk
  */
-@ConfigurationProperties(prefix = "mail-service")
+@ConfigurationProperties(prefix = "mail-service.accounts")
+@RefreshScope
 public class MailProperties {
 
     /**
@@ -20,6 +22,16 @@ public class MailProperties {
 
     public List<MailSender> getMailInfos() {
         return mailInfos;
+    }
+
+    private boolean enableRefresh = true;
+
+    public boolean isEnableRefresh() {
+        return enableRefresh;
+    }
+
+    public void setEnableRefresh(boolean enableRefresh) {
+        this.enableRefresh = enableRefresh;
     }
 
     public void setMailInfos(List<MailSender> mailInfos) {

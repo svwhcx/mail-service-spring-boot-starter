@@ -2,10 +2,13 @@
 
 ## 1. 出现背景
 
-很多情况下会用邮箱发送一些通知，比如验证码、文件之类的邮件，这个时候很多邮件服务会限制不同账号的发送频率，如果发送频率过高就会将账号锁定一段时间，本发送框架旨在解决高频率下的自动调整邮件的发送频率和邮件服务的降级，防止邮件服务因过多的发送请求而崩溃
+很多情况下会用邮箱发送一些通知，比如验证码、文件之类的邮件，这个时候很多邮件服务会限制不同账号的发送频率，如果发送频率过高就会将账号锁定一段时间
+为了防止出现账号锁定时邮件发送服务被频繁占用（账号不可用但是依旧使用CPU和网卡）
+或者防止邮件账号发送被锁定的情况
+本发送框架旨在解决高频率下的自动调整邮件的发送频率和邮件服务的降级，防止邮件服务因过多的发送请求而崩溃
 
 ## 2. 目前支持
-
+- 账号不可用（账号密码错误、发送频率被限制等）
 - 配置多账号邮件发送并且配置限流策略
 - 账号被限制时发送频率自动降级
 - 所有账号不可用时进行服务预警
@@ -13,7 +16,6 @@
 
 ## 3. 待支持
 
-- 动态刷新服务的配置
 - 分布式环境下多个邮件发送服务的降级和限流
 
 ## 4. 使用
@@ -43,7 +45,7 @@
 
 在配置文件中配置发件账号以及邮件服务的参数信息
 
-- 发件账号的配置前缀 `mail-service.infos`；可配置项
+- 发件账号的配置前缀 `mail-service.aacounts.mail-infos`；可配置项
 
   - `hostName` ：邮件服务器的SMTP地址
   - `username`：用户名
@@ -56,7 +58,8 @@
   - `timeout`：规定的连接的超时时间 (毫秒）
   - `senderRank`：邮箱号可发送等级（默认配置了1-14级并且默认为低级）数值越高等级越低发送频率也越低
 
-- 邮件服务的配置前缀 `mail-service-pool`；可配置项有
+- `mail-service.accounts.enableRefresh`开启动态配置刷新(适配SpringCloud，默认开启)
+- 邮件服务的配置前缀 `mail-service.pool`；可配置项有
 
   - `corePoolSize`：发送邮件线程池核心线程数（默认为3）
   - `maxPoolSize`：发送邮件线程池最大线程数（默认为5）
@@ -69,75 +72,63 @@
 
 - ```yaml
   mail-service:
-    mail-infos:
-      - host-name: smtp.qq.com
-        username: username
-        password: password
-        from-sender: from-sender
-        sender-rank: 9
-      - host-name: smtp.163.com
-        username: username
-        password: password
-        from-sender: from-sender
-        sender-rank: 9
-  mail-service-pool:
-    core-pool-size: 5
-    keep-alive-time: 3000
-    sleep-time: 3000
+    enableRefresh: true # 是否开启配置自动刷新，默认为true
+    accounts: 
+      mail-infos:
+        - host-name: smtp.qq.com
+          username: username
+          password: password
+          from-sender: from-sender
+          sender-rank: 9
+        - host-name: smtp.163.com
+          username: username
+          password: password
+          from-sender: from-sender
+          sender-rank: 9
+    pool:
+      core-pool-size: 5
+      keep-alive-time: 3000
+      sleep-time: 3000
   ```
 
 ### 3. 自定义注入配置
 
-1、可以参考一下部分进行动态注入
-
+1、对于默认的计数限流执行器可以像如下注入自定义的限流等级列表并返回，需要注意的是要注意记录的等级顺序
 ```java
-@Configuration
-@EnableConfigurationProperties(value = {MailProperties.class, MailServiceProperties.class})
-public class MailSenderAutoConfiguration {
-
-    private final Logger LOGGER = LoggerFactory.getLogger(MailSenderAutoConfiguration.class);
-
-    /**
-     * 返回一个默认的邮件发送器
-     */
-    @Bean
-    @ConditionalOnClass(value = {MailProperties.class, MailServiceProperties.class})
-    public MailService mailService(MailProperties mailProperties, MailServiceProperties mailServiceProperties){
-        // 默认为BaseMailService
-        for (MailSender mailInfo : mailProperties.getMailInfos()) {
-            if (mailInfo.getStartLimitTime() != 0L){
-                LOGGER.error("The mail service start failed ! the startLimitTime shouldn't  be set");
-            }
-        }
-        return new StandAloneMailService(mailProperties, mailServiceProperties);
-    }
-
+@Bean
+public RateLimitRankConf rateLimitRankConf(){
+    RateLimitRankConf rateLimitRankConf = new RateLimitRankConf();
+    // 限流等级配置
+    return rateLimitRankConf;
 }
 ```
-
-其中，StandAloneMailService的构造参数有
-
+2、注入自定义的限流执行器，需要注意的是若要使用MailProperties中的属性，那么必须要等待MailProperties被注入成功后才可
 ```java
-public StandAloneMailService(MailProperties mailProperties,
-                                 MailServiceProperties mailServiceProperties,
-                                 List<RateLimit> rateLimits,
-                                 ThreadFactory threadFactory,
-                                 RejectedExecutionHandler rejectedExecutionHandler)
-```
-
-2、`rateLimits` 是限流等级的list，使用者可定义一系列的限流等级；目前只支持计数器限流算法但使用者可以实现RateLimit接口来扩展自己的限流算法，不过需要注意多个线程竞争一个账号资源时候的线程安全问题，其中默认的包含RateLimit策略包含的参数有
-
-```java
-public CountRateLimit(TimeUnit accessTimeUnit, Long timeLimit, int accessCountLimit) {
-        this.accessTimeUnit = accessTimeUnit; // 访问时间单元（用于最终转换为毫秒）
-        this.timeLimit = timeLimit; // 限制单元数，和访问时间单元结合
-        this.accessCountLimit = accessCountLimit; // 访问数量，在一定的单元时间内可发送邮件的数量（用于发送邮件限流）
+@Bean
+@ConditionalOnClass(value = {MailProperties.class})
+public RateLimitExecutor rateLimitExecutor(MailProperties mailProperties){     
+    RateLimitExecutor rateLimitExecutor;
+    // 配置限流执行器
+    return  rateLimitExecutor;
 }
 ```
-
-3、如果需要自定义服务预警的触发事件可以传入一个实现了MailServiceListener接口的对象，当发生服务预警时则会执行相应的方法
-
+3、注入自定义的监听器，可以在邮件发送成功后，邮件服务资源紧张时做指定动作。
+```java
+@Bean
+public MailServiceListener mailServiceListener(){
+    return new DefaultMailListener();
+}
+```
+4、注入自定义的线程池执行器,
+需要注意的是一定要像下面这样将线程池包裹住，防止和其他的Bean冲突
+```java
+@Bean
+public DefaultThreadPoolExecutor defaultThreadPoolExecutor(MailServiceProperties mailServiceProperties){
+    ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor();
+    return new DefaultThreadPoolExecutor(threadPoolExecutor);
+}
+```
 ## 5. 使用建议
 
 - 该框架目前只支持在单体环境下使用
-- 在使用时如果邮件在严格到达模式下服务存留邮件发送任务过多时需要注意整个服务的OOM问题 
+- 在使用时如果邮件在严格到达模式下服务存留邮件发送任务过多时需要注意整个服务的OOM问题

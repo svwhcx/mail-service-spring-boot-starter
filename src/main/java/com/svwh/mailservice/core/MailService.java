@@ -9,6 +9,11 @@ import com.svwh.mailservice.mail.Mail;
 public interface MailService {
 
     /**
+     * 开启服务
+     */
+    void start();
+
+    /**
      * 发送邮件服务
      * @param mail 邮件任务
      * @return 发送邮件是否成功
@@ -20,12 +25,6 @@ public interface MailService {
      */
     void closeService();
 
-    /**
-     * 获取当前服务已经成功发送的邮件的数目
-     * @param isClean 是否清除已成功发送邮件计数
-     * @return 成功发送邮件总数
-     */
-    long successCount(boolean isClean);
 
     /**
      * 当前服务等待发送邮件个数
@@ -37,7 +36,7 @@ public interface MailService {
      * 设置邮箱服务监听器
      * @param mailServiceListener 邮件服务监听器
      */
-    void setErrorListener(MailServiceListener mailServiceListener);
+    void setMailListener(MailServiceListener mailServiceListener);
 
 }
 

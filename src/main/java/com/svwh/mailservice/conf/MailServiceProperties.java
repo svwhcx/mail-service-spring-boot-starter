@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @description 用户可自定义线程池的配置（发挥最大性能）
  * @Author cxk
  */
-@ConfigurationProperties(prefix = "mail-service-pool")
+@ConfigurationProperties(prefix = "mail-service.pool")
 public class MailServiceProperties {
 
 

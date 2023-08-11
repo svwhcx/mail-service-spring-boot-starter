@@ -5,7 +5,6 @@ import com.svwh.mailservice.mail.MailSender;
 /**
  * @description 顶级限流接口(当前已有的限流实现：计数器限流，后期可能会增加更多的限流算法。）
  * @Author cxk
- * @Date 2022/5/26 12:45
  */
 public interface RateLimit {
 

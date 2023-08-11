@@ -1,6 +1,7 @@
 package com.svwh.mailservice.algrothim;
 
 
+import com.svwh.mailservice.enums.CountRateLimitEnum;
 import com.svwh.mailservice.mail.MailSender;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +51,12 @@ public class CountRateLimit implements RateLimit{
         this.accessCountLimit = accessCountLimit;
     }
 
+    public CountRateLimit(CountRateLimitEnum countRateLimitEnum){
+        this.accessTimeUnit = countRateLimitEnum.timeUnit;
+        this.timeLimit = countRateLimitEnum.timeLimit;
+        this.accessCountLimit = countRateLimitEnum.accessCountLimit;
+    }
+
     /**
      * 尝试访问，并发情况下使用CAS + 自旋的方式尝试获取发送邮件所需的条件
      * 直接使用自旋锁而不用互斥锁为了节约资源（获取锁的时间很短）
@@ -93,7 +100,7 @@ public class CountRateLimit implements RateLimit{
     }
 
     private void rateLimitOccur(MailSender mailSender){
-        LOGGER.error("===============当前邮箱{}发送频率超过了限制！===========",mailSender.getFromSender());
+        LOGGER.warn("账号：{}发送频率达到限制！",mailSender.getFromSender());
     }
 
 

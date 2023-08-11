@@ -29,6 +29,11 @@ public abstract class BaseMailService implements MailService{
      */
     private long errorTriggerSleepTime = System.currentTimeMillis();
 
+    /**
+     * 邮件服务预警间隔：默认30s
+     */
+    private static final long DEFAULT_WARN_DURATION = 30000;
+
     private final ReentrantLock lock = new ReentrantLock();
 
     /**
@@ -45,6 +50,10 @@ public abstract class BaseMailService implements MailService{
             sendHtmlMail(mailSender,mail);
         } else if (mail instanceof TextMail) {
             sendTextMail(mailSender,mail);
+        }
+        // 邮件发送成功看是否有监听器需要执行。
+        if (mailServiceListener != null ){
+            mailServiceListener.successListener(mail,mailSender);
         }
     }
 
@@ -78,7 +87,7 @@ public abstract class BaseMailService implements MailService{
     }
 
     @Override
-    public void setErrorListener(MailServiceListener mailServiceListener) {
+    public void setMailListener(MailServiceListener mailServiceListener) {
         this.mailServiceListener = mailServiceListener;
     }
 
@@ -89,11 +98,14 @@ public abstract class BaseMailService implements MailService{
         long currentTime = System.currentTimeMillis();
          // 在判断当前时间是否满足的时候加锁防止多线程情况下
          // 导致同时进行判断从而短时间内发出多次预警
+        if (currentTime - errorTriggerSleepTime < DEFAULT_WARN_DURATION){
+            return;
+        }
         lock.lock();
         try {
-            if (currentTime - errorTriggerSleepTime > 30000){
+            if (currentTime - errorTriggerSleepTime >= DEFAULT_WARN_DURATION){
                 errorTriggerSleepTime = currentTime;
-                Logger.warn("邮箱服务资源即将耗尽!");
+                Logger.warn("邮箱服务资源即已经耗尽!");
                 if (mailServiceListener != null){
                     mailServiceListener.errorListener();
                 }

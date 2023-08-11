@@ -1,14 +1,11 @@
 package com.svwh.mailservice.core;
 
-import com.svwh.mailservice.algrothim.CountRateLimit;
-import com.svwh.mailservice.algrothim.RateLimit;
+import com.svwh.mailservice.algrothim.RateLimitExecutor;
 import com.svwh.mailservice.conf.MailProperties;
 import com.svwh.mailservice.conf.MailServiceProperties;
 import com.svwh.mailservice.mail.Mail;
 
 import com.svwh.mailservice.mail.MailSender;
-import com.svwh.mailservice.threadpool.MailThreadPoolFactory;
-import com.svwh.mailservice.threadpool.MailTooManyRejectStrategy;
 import com.svwh.mailservice.util.ParamAssert;
 
 import org.apache.commons.mail.EmailException;
@@ -17,17 +14,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.mail.internet.AddressException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.LongAdder;
 
 /**
  *
- * @description
- *      本策略只适合单体情况下的服务
- *
+ * @description 本策略只适合单体情况下的服务
  *      当邮件发送过快的时候会导致邮箱账号发送频率被限制而导致邮件服务不可用
  *      为此，故要实现一个降级、限流保证邮件服务能正常发送邮件
  *      将邮件先保存，待服务正常后再发送。
@@ -35,9 +27,6 @@ import java.util.concurrent.atomic.LongAdder;
  *      本服务实现了两个维度的限流模式
  *          1、如果所有邮件不可用采取不同的限流和对应的降级策略并并报警
  *          2、如果邮件数目已经达到了最大数目采取对应的降级策略
- * TODO:
- *  1、适配动态配置刷新更新发送邮件账号集
- *  2、合理采用设计模式来增强可扩展性
  * @Author cxk
  */
 public class StandAloneMailService extends BaseMailService {
@@ -45,9 +34,9 @@ public class StandAloneMailService extends BaseMailService {
     private static final Logger Logger = LoggerFactory.getLogger(StandAloneMailService.class);
 
     /**
-     * 用于记录成功发送了多少封邮件
+     * 默认的邮件队列大小
      */
-    private final LongAdder successCountAdder = new LongAdder();
+    private static final int  MAIL_QUEUE_SIZE = 5000;
 
     /**
      * 最大可发送邮件任务的数量（可被严格模式打破）
@@ -55,19 +44,9 @@ public class StandAloneMailService extends BaseMailService {
     private final AtomicInteger maxMailTaskNum;
 
     /**
-     * 邮箱账号集
-     */
-    private static List<MailSender> mailSenders;
-
-    /**
      * 邮件严格到达队列消费者线程
      */
     private Thread consumerMailThread;
-
-    /**
-     * 定时升级邮箱账号等级线程
-     */
-    private Thread upGradeThread;
 
     /**
      * 当所有邮箱账号不可用时消费者线程需要睡眠的时间
@@ -75,9 +54,9 @@ public class StandAloneMailService extends BaseMailService {
     private final long threadSleepTime;
 
     /**
-     * 限流配置策略
+     * 限流执行器
      */
-    private final ConcurrentHashMap<MailSender, RateLimit> mailSenderRateLimitMap;
+    private RateLimitExecutor rateLimitExecutor;
 
     /**
      * 线程池
@@ -87,110 +66,31 @@ public class StandAloneMailService extends BaseMailService {
     /**
      * 存储必达消息的队列，如果队列太大会造成服务OOM
      */
-    private final BlockingQueue<Mail> mailQueue = new LinkedBlockingQueue<>(5000);
+    private final BlockingQueue<Mail> mailQueue = new LinkedBlockingQueue<>(MAIL_QUEUE_SIZE);
 
-    /**
-     * 限流策略列表
-     */
-    private List<RateLimit> rateLimits;
-
-
-    private static final ThreadFactory DEFAULT_THREAD_FACTORY = new MailThreadPoolFactory();
-    private static final RejectedExecutionHandler DEFAULT_REJECT_HANDLER = new MailTooManyRejectStrategy();
-
-
-
-    public StandAloneMailService(MailProperties mailProperties,
-                                 MailServiceProperties mailServiceProperties) {
-        this(mailProperties, mailServiceProperties,null,
-                DEFAULT_THREAD_FACTORY,DEFAULT_REJECT_HANDLER);
-    }
 
     public StandAloneMailService(MailProperties mailProperties,
                                  MailServiceProperties mailServiceProperties,
-                                 List<RateLimit> rateLimits) {
-        this(mailProperties, mailServiceProperties,rateLimits,
-                DEFAULT_THREAD_FACTORY,DEFAULT_REJECT_HANDLER);
-    }
-
-    public StandAloneMailService(MailProperties mailProperties,
-                                 MailServiceProperties mailServiceProperties,
-                                 List<RateLimit> rateLimits,
-                                 ThreadFactory threadFactory){
-        this(mailProperties, mailServiceProperties,rateLimits,
-                threadFactory,DEFAULT_REJECT_HANDLER);
-    }
-
-    public StandAloneMailService(MailProperties mailProperties,
-                                 MailServiceProperties mailServiceProperties,
-                                 RejectedExecutionHandler rejectedExecutionHandler){
-        this (mailProperties, mailServiceProperties,null,null,rejectedExecutionHandler);
-    }
-
-    public StandAloneMailService(MailProperties mailProperties,
-                                 MailServiceProperties mailServiceProperties,
-                                 List<RateLimit> rateLimits,
-                                 ThreadFactory threadFactory,
-                                 RejectedExecutionHandler rejectedExecutionHandler){
-        mailSenders = mailProperties.getMailInfos();
-        mailSenderRateLimitMap = new ConcurrentHashMap<>();
+                                 RateLimitExecutor rateLimitExecutor,
+                                 ThreadPoolExecutor threadPoolExecutor){
         this.threadSleepTime = mailServiceProperties.getSleepTime();
-        this.rateLimits = rateLimits;
+        this.rateLimitExecutor = rateLimitExecutor;
         maxMailTaskNum = new AtomicInteger(mailServiceProperties.getMaxTaskNum());
         // 配置线程池
-        this.threadPoolExecutor =
-                new ThreadPoolExecutor(mailServiceProperties.getCorePoolSize(),
-                        mailServiceProperties.getMaxPoolSize(), mailServiceProperties.getKeepAliveTime(),
-                        TimeUnit.SECONDS, new LinkedBlockingQueue<>(mailServiceProperties.getMaxWorkCount()),
-                        threadFactory, rejectedExecutionHandler);
-        initRateLimitInfo();
+        this.threadPoolExecutor = threadPoolExecutor;
+        // 开启邮件发送服务
+        start();
+    }
+
+
+    @Override
+    public void start() {
         // 自启动缓冲区消费者
         consumer();
-        // 调整邮箱账号等级
-        adjustMailSenderGrade();
+        // 启动限流执行器
+        rateLimitExecutor.start();
+        Logger.info("邮件发送服务启动成功！...");
     }
-
-
-    /**
-     * 邮件账号限流对应的初始化操作 分配不同的限流策略和等级
-     */
-    private void initRateLimitInfo() {
-        // 如果没有配置限流等级，自动进行默认配置
-        if (this.rateLimits == null){
-            configRateLimits();
-        }
-        int rateLimitsSize = rateLimits.size();
-        // 根据发送邮箱信息配置不同的限流等级
-        for (MailSender mailSender : mailSenders){
-            int rateLimitRank = mailSender.getSenderRank();
-            if (rateLimitRank <= 0 || rateLimitRank > rateLimitsSize){
-                throw new RuntimeException();
-            }
-            mailSenderRateLimitMap.put(mailSender,rateLimits.get(rateLimitRank));
-        }
-    }
-
-    /**
-     * 配置默认的限流策略
-     */
-    private void configRateLimits(){
-        this.rateLimits = new ArrayList<>();
-        rateLimits.add(new CountRateLimit(TimeUnit.MINUTES,1L,600));
-        rateLimits.add(new CountRateLimit(TimeUnit.MINUTES,1L,400));
-        rateLimits.add(new CountRateLimit(TimeUnit.MINUTES,1L,200));
-        rateLimits.add(new CountRateLimit(TimeUnit.MINUTES,1L,100));
-        rateLimits.add(new CountRateLimit(TimeUnit.MINUTES,1L,70));
-        rateLimits.add(new CountRateLimit(TimeUnit.MINUTES,1L,60));
-        rateLimits.add(new CountRateLimit(TimeUnit.MINUTES,1L,50));
-        rateLimits.add(new CountRateLimit(TimeUnit.MINUTES,1L,30));
-        rateLimits.add(new CountRateLimit(TimeUnit.MINUTES,1L,20));
-        rateLimits.add(new CountRateLimit(TimeUnit.MINUTES,1L,10));
-        rateLimits.add(new CountRateLimit(TimeUnit.MINUTES,5L,40));
-        rateLimits.add(new CountRateLimit(TimeUnit.SECONDS,30L,10));
-        rateLimits.add(new CountRateLimit(TimeUnit.MINUTES,3L,10));
-        rateLimits.add(new CountRateLimit(TimeUnit.MINUTES,10L,20));
-    }
-
 
     @Override
     public boolean send(Mail mail) {
@@ -209,7 +109,7 @@ public class StandAloneMailService extends BaseMailService {
         }
 
         // 当前邮件任务数量没有到达阈值但所有账号都不可用
-        if (isAllLimited()) {
+        if (rateLimitExecutor.isAllLimited()) {
             if (mail.getStrictArrive()) {
                 sendMail(mail);
                 return true;
@@ -233,81 +133,45 @@ public class StandAloneMailService extends BaseMailService {
             // 所有的邮箱账号都不可用并且判断邮件是否严格到达
             // 如果所有账号都不可用那么当前线程只负责接收新的请求
             // 而旧的请求是由consumer的一个单独线程来负责的
-            if (isAllLimited()) {
+            if (rateLimitExecutor.isAllLimited()) {
                 errorTrigger();
                 if (mail.getStrictArrive()) {
                     producer(mail);
                 }
                 return;
             }
-            for (MailSender mailSender : mailSenders) {
-                // 如果邮箱账号被锁定则尝试解封
-                if (mailSender.isLimited()) {
-                    tryRemoveLimit(mailSender);
-                    continue;
-                }
-                RateLimit rateLimit = mailSenderRateLimitMap.get(mailSender);
-                // 尝试获取执行权限（在限制频率范围内）
-                if (rateLimit.tryAccess(mailSender)) {
-                    try {
-                        doSendMail(mail, mailSender);
-                        successCountAdder.increment();
-                        maxMailTaskNum.incrementAndGet();
-                        return;
-
-                    }catch (AddressException e){
-                      // 当发送邮件的目的地址发生错误的时候不需要对服务进行降级
-                      Logger.warn("some destination email address {} are illegal !",mail.getToMail());
-                    } catch (EmailException e) {
-                        maxMailTaskNum.incrementAndGet();
-                        adjustmentMailSender(mailSender,true);
-                        retrySendEmail(mail);
-                        Logger.warn("=============邮箱账号{}不可用==============", mailSender);
-                    } catch (Exception e) {
-                        Logger.error("=============发送邮件发生了错误！");
-                        Logger.error(e.getMessage());
-                        maxMailTaskNum.incrementAndGet();
-                        retrySendEmail(mail);
-                    }
-                }else{
-                    adjustmentMailSender(mailSender,false);
-                }
+            MailSender availableMailSender = rateLimitExecutor.availableAccount();
+            // 没有可用的邮箱账号（虽然前面做了判断，但是防止线程安全问题再次判断）。
+            if (availableMailSender == null){
+                retrySendEmail(mail);
+                return;
+            }
+            try{
+                doSendMail(mail, availableMailSender);
+                maxMailTaskNum.incrementAndGet();
+            }catch (AddressException e){
+                // 当发送邮件的目的地址发生错误的时候不需要对服务进行降级
+                Logger.warn("非法的目的邮箱地址：{}!",mail.getToMail());
+            }catch (EmailException e){
+                maxMailTaskNum.incrementAndGet();
+                rateLimitExecutor.adjustmentMailSender(availableMailSender);
+                retrySendEmail(mail);
+                Logger.warn("邮箱账号:{} 不可用！", availableMailSender.getUsername());
+            }catch (Exception e){
+                Logger.error("=============发送邮件发生了错误！===========");
+                Logger.error(e.getMessage());
+                maxMailTaskNum.incrementAndGet();
+                retrySendEmail(mail);
             }
         });
     }
 
 
-
-    /**
-     * 判断所有的邮箱是否不可用
-     *
-     * @return 是否所有的邮箱已经都不可用了
-     */
-    private boolean isAllLimited() {
-        // 为了防止并发问题，直接循环判断邮箱账号列表而不直接用原子类来记录
-        // 邮箱账号列表一般不会太多因此不会造成性能损伤
-        int limitedCount = 0;
-        for (MailSender mailSender : mailSenders){
-            if (mailSender.isLimited()){
-                limitedCount++;
-            }
-        }
-        return limitedCount == mailSenders.size();
-    }
-
     @Override
     public void closeService() {
         threadPoolExecutor.shutdown();
         consumerMailThread.interrupt();
-        upGradeThread.interrupt();
-    }
-
-    @Override
-    public long successCount(boolean isClean) {
-        if (isClean){
-            return successCountAdder.sumThenReset();
-        }
-        return successCountAdder.sum();
+        rateLimitExecutor.close();
     }
 
     @Override
@@ -328,41 +192,6 @@ public class StandAloneMailService extends BaseMailService {
         ParamAssert.notNull(mail.getToMail(), "the of toMail is Null");
     }
 
-    /**
-     * 对发送邮件账号等级进行调整
-     *
-     * @param mailSender 发送邮件账号
-     * @param isDowngrade 是否执行降级操作
-     */
-    private void adjustmentMailSender(MailSender mailSender,boolean isDowngrade) {
-        // 对邮箱账号进行限流,被限制了不必再次限制和调整等级
-        if (!mailSender.isLimited()) {
-            mailSender.setLimited(true);
-            if (isDowngrade){
-                mailSender.setStartLimitTime(System.currentTimeMillis());
-                // 账号等级降级
-                Integer senderRank = mailSender.getSenderRank();
-                if (senderRank < rateLimits.size()) {
-                    mailSender.setSenderRank(senderRank + 1);
-                    RateLimit newRateLimit = rateLimits.get(mailSender.getSenderRank()-1);
-                    mailSenderRateLimitMap.put(mailSender, newRateLimit);
-                }
-            }
-        }
-    }
-
-
-    /**
-     * 尝试解封邮箱账号 （每个账号默认封10分钟）
-     *
-     * @param mailSender 发送邮件账号
-     */
-    private void tryRemoveLimit(MailSender mailSender) {
-        long now = System.currentTimeMillis();
-        if (now > mailSender.getStartLimitTime() + TimeUnit.MINUTES.toMillis(10)) {
-            mailSender.setLimited(false);
-        }
-    }
 
 
     /**
@@ -376,40 +205,6 @@ public class StandAloneMailService extends BaseMailService {
             producer(mail);
         }
     }
-
-    /**
-     * 定时任务
-     * 每隔一天对邮箱账号发邮件等级进行升级(每次升级一个等级）
-     */
-    private void adjustMailSenderGrade() {
-        this.upGradeThread = new Thread(() -> {
-            try {
-                // 调整时间为凌晨1点唤醒
-                long now = System.currentTimeMillis();
-                long sleep = 90000000 - now % 86400000;
-                TimeUnit.MILLISECONDS.sleep(sleep);
-                while (true) {
-                    for (MailSender mailSender : mailSenders) {
-                        Integer senderRank = mailSender.getSenderRank();
-                        if (senderRank > 1) {
-                            mailSender.setSenderRank(senderRank - 1);
-                            Logger.info("邮箱: {} 升级成功,当前邮箱账号等级为: {}", mailSender.getFromSender(), mailSender.getSenderRank());
-                            RateLimit rateLimit = rateLimits.get(mailSender.getSenderRank() - 1);
-                            mailSenderRateLimitMap.put(mailSender, rateLimit);
-                        }
-                    }
-                    if (consumerMailThread.isInterrupted()) {
-                        break;
-                    }
-                    TimeUnit.DAYS.sleep(1);
-                }
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-        });
-        upGradeThread.start();
-    }
-
 
     /**
      * 生产者，向队列投递消息
@@ -434,12 +229,12 @@ public class StandAloneMailService extends BaseMailService {
             while (true) {
                 // 当消费者线程得知所有的邮箱不可用时，会强制休眠一段时间
                 // 这段时间内不会再次响应严格到达邮件队列中的邮件发送任务
-                if (isAllLimited()) {
+                if (rateLimitExecutor.isAllLimited()) {
                     consumerLock();
                 }
                 try {
                     Mail mail = mailQueue.take();
-                    Logger.info("当前待发送邮件个数为  >> {}", mailQueue.size());
+                    Logger.info("待发送邮件数为: {}", mailQueue.size());
                     sendMail(mail);
                     if (consumerMailThread.isInterrupted()) {
                         break;
