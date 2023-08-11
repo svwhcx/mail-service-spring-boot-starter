@@ -14,6 +14,8 @@
     <name>mail-service</name>
     <description>mail-service</description>
     <properties>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
         <java.version>1.8</java.version>
         <spring.boot.version>2.2.2.RELEASE</spring.boot.version>
         <sl4j.version>1.7.25</sl4j.version>
